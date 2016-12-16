@@ -145,6 +145,8 @@ const unsigned char fctsupported[] =
 #define T35  5
 #define  MAX_BUFFER  64	//!< maximum size for the communication buffer in bytes
 
+typedef void (*callback_ptr)(uint8_t function, uint16_t reg_address, uint16_t new_value);
+
 /**
  * @class Modbus
  * @brief
@@ -179,12 +181,12 @@ private:
     uint8_t validateRequest();
     void get_FC1();
     void get_FC3();
-    int8_t process_FC1( uint16_t *regs, uint8_t u8size );
-    int8_t process_FC3( uint16_t *regs, uint8_t u8size );
-    int8_t process_FC5( uint16_t *regs, uint8_t u8size );
-    int8_t process_FC6( uint16_t *regs, uint8_t u8size );
-    int8_t process_FC15( uint16_t *regs, uint8_t u8size );
-    int8_t process_FC16( uint16_t *regs, uint8_t u8size );
+    int8_t process_FC1( uint16_t *regs, uint8_t u8size, callback_ptr callback );
+    int8_t process_FC3( uint16_t *regs, uint8_t u8size, callback_ptr callback );
+    int8_t process_FC5( uint16_t *regs, uint8_t u8size, callback_ptr callback );
+    int8_t process_FC6( uint16_t *regs, uint8_t u8size, callback_ptr callback );
+    int8_t process_FC15( uint16_t *regs, uint8_t u8size, callback_ptr callback );
+    int8_t process_FC16( uint16_t *regs, uint8_t u8size, callback_ptr callback );
     void buildException( uint8_t u8exception ); // build exception message
 
 public:
@@ -201,7 +203,7 @@ public:
     boolean getTimeOutState(); //!<get communication watch-dog timer state
     int8_t query( modbus_t telegram ); //!<only for master
     int8_t poll(); //!<cyclic poll for master
-    int8_t poll( uint16_t *regs, uint8_t u8size ); //!<cyclic poll for slave
+    int8_t poll( uint16_t *regs, uint8_t u8size, callback_ptr callback=NULL ); //!<cyclic poll for slave
     uint16_t getInCnt(); //!<number of incoming messages
     uint16_t getOutCnt(); //!<number of outcoming messages
     uint16_t getErrCnt(); //!<error counter
@@ -738,7 +740,7 @@ int8_t Modbus::poll()
  * @return 0 if no query, 1..4 if communication error, >4 if correct query processed
  * @ingroup loop
  */
-int8_t Modbus::poll( uint16_t *regs, uint8_t u8size )
+int8_t Modbus::poll( uint16_t *regs, uint8_t u8size, callback_ptr callback=NULL  )
 {
 
     au16regs = regs;
@@ -792,23 +794,23 @@ int8_t Modbus::poll( uint16_t *regs, uint8_t u8size )
     {
     case MB_FC_READ_COILS:
     case MB_FC_READ_DISCRETE_INPUT:
-        return process_FC1( regs, u8size );
+        return process_FC1( regs, u8size, callback );
         break;
     case MB_FC_READ_INPUT_REGISTER:
     case MB_FC_READ_REGISTERS :
-        return process_FC3( regs, u8size );
+        return process_FC3( regs, u8size, callback );
         break;
     case MB_FC_WRITE_COIL:
-        return process_FC5( regs, u8size );
+        return process_FC5( regs, u8size, callback );
         break;
     case MB_FC_WRITE_REGISTER :
-        return process_FC6( regs, u8size );
+        return process_FC6( regs, u8size, callback );
         break;
     case MB_FC_WRITE_MULTIPLE_COILS:
-        return process_FC15( regs, u8size );
+        return process_FC15( regs, u8size, callback );
         break;
     case MB_FC_WRITE_MULTIPLE_REGISTERS :
-        return process_FC16( regs, u8size );
+        return process_FC16( regs, u8size, callback );
         break;
     default:
         break;
@@ -1188,7 +1190,7 @@ void Modbus::get_FC3()
  * @return u8BufferSize Response to master length
  * @ingroup discrete
  */
-int8_t Modbus::process_FC1( uint16_t *regs, uint8_t u8size )
+int8_t Modbus::process_FC1( uint16_t *regs, uint8_t u8size, callback_ptr callback )
 {
     uint8_t u8currentRegister, u8currentBit, u8bytesno, u8bitsno;
     uint8_t u8CopyBufferSize;
@@ -1212,6 +1214,9 @@ int8_t Modbus::process_FC1( uint16_t *regs, uint8_t u8size )
         u16coil = u16StartCoil + u16currentCoil;
         u8currentRegister = (uint8_t) (u16coil / 16);
         u8currentBit = (uint8_t) (u16coil % 16);
+        if (callback) {
+            (*callback)(1, u16currentCoil, bitRead( regs[ u8currentRegister ], u8currentBit ) );
+        }
 
         bitWrite(
             au8Buffer[ u8BufferSize ],
@@ -1241,7 +1246,7 @@ int8_t Modbus::process_FC1( uint16_t *regs, uint8_t u8size )
  * @return u8BufferSize Response to master length
  * @ingroup register
  */
-int8_t Modbus::process_FC3( uint16_t *regs, uint8_t u8size )
+int8_t Modbus::process_FC3( uint16_t *regs, uint8_t u8size, callback_ptr callback )
 {
 
     uint8_t u8StartAdd = word( au8Buffer[ ADD_HI ], au8Buffer[ ADD_LO ] );
@@ -1254,6 +1259,9 @@ int8_t Modbus::process_FC3( uint16_t *regs, uint8_t u8size )
 
     for (i = u8StartAdd; i < u8StartAdd + u8regsno; i++)
     {
+        if (callback) {
+            (*callback)(3, i, regs[i]);
+        }
         au8Buffer[ u8BufferSize ] = highByte(regs[i]);
         u8BufferSize++;
         au8Buffer[ u8BufferSize ] = lowByte(regs[i]);
@@ -1273,7 +1281,7 @@ int8_t Modbus::process_FC3( uint16_t *regs, uint8_t u8size )
  * @return u8BufferSize Response to master length
  * @ingroup discrete
  */
-int8_t Modbus::process_FC5( uint16_t *regs, uint8_t u8size )
+int8_t Modbus::process_FC5( uint16_t *regs, uint8_t u8size, callback_ptr callback )
 {
     uint8_t u8currentRegister, u8currentBit;
     uint8_t u8CopyBufferSize;
@@ -1284,6 +1292,9 @@ int8_t Modbus::process_FC5( uint16_t *regs, uint8_t u8size )
     u8currentBit = (uint8_t) (u16coil % 16);
 
     // write to coil
+    if (callback) {
+        (*callback)(5, u16coil, au8Buffer[ NB_HI ] == 0xff);
+    }
     bitWrite(
         regs[ u8currentRegister ],
         u8currentBit,
@@ -1306,13 +1317,16 @@ int8_t Modbus::process_FC5( uint16_t *regs, uint8_t u8size )
  * @return u8BufferSize Response to master length
  * @ingroup register
  */
-int8_t Modbus::process_FC6( uint16_t *regs, uint8_t u8size )
+int8_t Modbus::process_FC6( uint16_t *regs, uint8_t u8size, callback_ptr callback )
 {
 
     uint8_t u8add = word( au8Buffer[ ADD_HI ], au8Buffer[ ADD_LO ] );
     uint8_t u8CopyBufferSize;
     uint16_t u16val = word( au8Buffer[ NB_HI ], au8Buffer[ NB_LO ] );
 
+    if (callback) {
+        (*callback)(6, u8add, u16val);
+    }
     regs[ u8add ] = u16val;
 
     // keep the same header
@@ -1332,7 +1346,7 @@ int8_t Modbus::process_FC6( uint16_t *regs, uint8_t u8size )
  * @return u8BufferSize Response to master length
  * @ingroup discrete
  */
-int8_t Modbus::process_FC15( uint16_t *regs, uint8_t u8size )
+int8_t Modbus::process_FC15( uint16_t *regs, uint8_t u8size, callback_ptr callback )
 {
     uint8_t u8currentRegister, u8currentBit, u8frameByte, u8bitsno;
     uint8_t u8CopyBufferSize;
@@ -1357,6 +1371,9 @@ int8_t Modbus::process_FC15( uint16_t *regs, uint8_t u8size )
         bTemp = bitRead(
                     au8Buffer[ u8frameByte ],
                     u8bitsno );
+        if (callback) {
+            (*callback)(15, u16currentCoil, bTemp);
+		}
 
         bitWrite(
             regs[ u8currentRegister ],
@@ -1388,7 +1405,7 @@ int8_t Modbus::process_FC15( uint16_t *regs, uint8_t u8size )
  * @return u8BufferSize Response to master length
  * @ingroup register
  */
-int8_t Modbus::process_FC16( uint16_t *regs, uint8_t u8size )
+int8_t Modbus::process_FC16( uint16_t *regs, uint8_t u8size, callback_ptr callback )
 {
     uint8_t u8func = au8Buffer[ FUNC ];  // get the original FUNC code
     uint8_t u8StartAdd = au8Buffer[ ADD_HI ] << 8 | au8Buffer[ ADD_LO ];
