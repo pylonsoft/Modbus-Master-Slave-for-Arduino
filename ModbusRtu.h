@@ -154,8 +154,7 @@ const unsigned char fctsupported[] =
 class Modbus
 {
 private:
-    HardwareSerial *port; //!< Pointer to Serial class object
-    SoftwareSerial *softPort; //!< Pointer to SoftwareSerial class object
+    Stream *port; //!< Pointer to (Software)Serial class object
     uint8_t u8id; //!< 0=master, 1..247=slave number
     uint8_t u8serno; //!< serial port: 0-Serial, 1..3-Serial1..Serial3; 4: use software serial
     uint8_t u8txenpin; //!< flow control pin: 0=USB or RS-232 mode, >0=RS-485 mode
@@ -317,7 +316,7 @@ void Modbus::begin(long u32speed)
         break;
     }
 
-    port->begin(u32speed);
+    ((HardwareSerial *)port)->begin(u32speed);
     if (u8txenpin > 1)   // pin 0 & pin 1 are reserved for RX/TX
     {
         // return RS485 transceiver to transmit mode
@@ -344,9 +343,9 @@ void Modbus::begin(long u32speed)
 void Modbus::begin(SoftwareSerial *sPort, long u32speed)
 {
 
-    softPort=sPort;
+    port=sPort;
 
-    softPort->begin(u32speed);
+    sPort->begin(u32speed);
 
     if (u8txenpin > 1)   // pin 0 & pin 1 are reserved for RX/TX
     {
@@ -355,7 +354,7 @@ void Modbus::begin(SoftwareSerial *sPort, long u32speed)
         digitalWrite(u8txenpin, LOW);
     }
 
-    while(softPort->read() >= 0);
+    while(port->read() >= 0);
     u8lastRec = u8BufferSize = 0;
     u16InCnt = u16OutCnt = u16errCnt = 0;
 }
@@ -400,7 +399,7 @@ void Modbus::begin(long u32speed,uint8_t u8config)
         break;
     }
 
-    port->begin(u32speed, u8config);
+    ((HardwareSerial *)port)->begin(u32speed, u8config);
     if (u8txenpin > 1)   // pin 0 & pin 1 are reserved for RX/TX
     {
         // return RS485 transceiver to transmit mode
@@ -657,10 +656,7 @@ int8_t Modbus::poll()
 {
     // check if there is any incoming frame
 	uint8_t u8current;
-    if(u8serno<4)
-        u8current = port->available();
-    else
-        u8current = softPort->available();
+    u8current = port->available();
 
     if (millis() > u32timeOut)
     {
@@ -747,10 +743,7 @@ int8_t Modbus::poll( uint16_t *regs, uint8_t u8size )
 
 
     // check if there is any incoming frame
-    if(u8serno<4)
-        u8current = port->available();
-    else
-        u8current = softPort->available();
+    u8current = port->available();
 
     if (u8current == 0) return 0;
 
@@ -848,22 +841,13 @@ int8_t Modbus::getRxBuffer()
     if (u8txenpin > 1) digitalWrite( u8txenpin, LOW );
 
     u8BufferSize = 0;
-    if(u8serno<4)
-        while ( port->available() )
-        {
-            au8Buffer[ u8BufferSize ] = port->read();
-            u8BufferSize ++;
+    while ( port->available() )
+    {
+        au8Buffer[ u8BufferSize ] = port->read();
+        u8BufferSize ++;
 
-            if (u8BufferSize >= MAX_BUFFER) bBuffOverflow = true;
-        }
-    else
-        while ( softPort->available() )
-        {
-            au8Buffer[ u8BufferSize ] = softPort->read();
-            u8BufferSize ++;
-
-            if (u8BufferSize >= MAX_BUFFER) bBuffOverflow = true;
-        }
+        if (u8BufferSize >= MAX_BUFFER) bBuffOverflow = true;
+    }
     u16InCnt++;
 
     if (bBuffOverflow)
@@ -928,10 +912,7 @@ void Modbus::sendTxBuffer()
     }
 
     // transfer buffer to serial line
-    if(u8serno<4)
-        port->write( au8Buffer, u8BufferSize );
-    else
-        softPort->write( au8Buffer, u8BufferSize );
+    port->write( au8Buffer, u8BufferSize );
 
     // keep RS485 transceiver in transmit mode as long as sending
     if (u8txenpin > 1)
@@ -964,10 +945,7 @@ void Modbus::sendTxBuffer()
         // return RS485 transceiver to receive mode
         digitalWrite( u8txenpin, LOW );
     }
-    if(u8serno<4)
-        while(port->read() >= 0);
-    else
-        while(softPort->read() >= 0);
+    while(port->read() >= 0);
 
     u8BufferSize = 0;
 
