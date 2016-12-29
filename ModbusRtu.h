@@ -1192,14 +1192,14 @@ int8_t Modbus::process_FC1( uint16_t *regs, uint8_t u8size, callback_ptr callbac
         u16coil = u16StartCoil + u16currentCoil;
         u8currentRegister = (uint8_t) (u16coil / 16);
         u8currentBit = (uint8_t) (u16coil % 16);
-        if (callback) {
-            (*callback)(1, u16currentCoil, bitRead( regs[ u8currentRegister ], u8currentBit ) );
-        }
-
         bitWrite(
             au8Buffer[ u8BufferSize ],
             u8bitsno,
             bitRead( regs[ u8currentRegister ], u8currentBit ) );
+        if (callback) {
+            (*callback)(1, u16currentCoil, bitRead( regs[ u8currentRegister ], u8currentBit ) );
+        }
+
         u8bitsno ++;
 
         if (u8bitsno > 7)
@@ -1237,13 +1237,13 @@ int8_t Modbus::process_FC3( uint16_t *regs, uint8_t u8size, callback_ptr callbac
 
     for (i = u8StartAdd; i < u8StartAdd + u8regsno; i++)
     {
-        if (callback) {
-            (*callback)(3, i, regs[i]);
-        }
         au8Buffer[ u8BufferSize ] = highByte(regs[i]);
         u8BufferSize++;
         au8Buffer[ u8BufferSize ] = lowByte(regs[i]);
         u8BufferSize++;
+        if (callback) {
+            (*callback)(3, i, regs[i]);
+        }
     }
     u8CopyBufferSize = u8BufferSize +2;
     sendTxBuffer();
