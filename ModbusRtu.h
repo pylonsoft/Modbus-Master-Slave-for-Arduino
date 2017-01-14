@@ -145,7 +145,7 @@ const unsigned char fctsupported[] =
 #define T35  5
 #define  MAX_BUFFER  64	//!< maximum size for the communication buffer in bytes
 
-typedef void (*callback_ptr)(uint8_t function, uint16_t reg_address, uint16_t new_value);
+typedef int32_t (*callback_ptr)(uint8_t function, uint16_t reg_address, uint16_t new_value);
 
 /**
  * @class Modbus
@@ -1270,14 +1270,18 @@ int8_t Modbus::process_FC5( uint16_t *regs, uint8_t u8size, callback_ptr callbac
     u8currentBit = (uint8_t) (u16coil % 16);
 
     // write to coil
+    bool do_write = true;
     if (callback) {
-        (*callback)(5, u16coil, au8Buffer[ NB_HI ] == 0xff);
+        if ((*callback)(5, u16coil, au8Buffer[ NB_HI ] == 0xff)) {
+            do_write = false;
+        }
     }
-    bitWrite(
-        regs[ u8currentRegister ],
-        u8currentBit,
-        au8Buffer[ NB_HI ] == 0xff );
-
+    if (do_write) {
+        bitWrite(
+            regs[ u8currentRegister ],
+            u8currentBit,
+            au8Buffer[ NB_HI ] == 0xff );
+    }
 
     // send answer to master
     u8BufferSize = 6;
@@ -1302,10 +1306,15 @@ int8_t Modbus::process_FC6( uint16_t *regs, uint8_t u8size, callback_ptr callbac
     uint8_t u8CopyBufferSize;
     uint16_t u16val = word( au8Buffer[ NB_HI ], au8Buffer[ NB_LO ] );
 
+    bool do_write = true;
     if (callback) {
-        (*callback)(6, u8add, u16val);
+        if ((*callback)(6, u8add, u16val)) {
+            do_write = false;
+        }
     }
-    regs[ u8add ] = u16val;
+    if (do_write) {
+        regs[ u8add ] = u16val;
+    }
 
     // keep the same header
     u8BufferSize         = RESPONSE_SIZE;
@@ -1349,14 +1358,19 @@ int8_t Modbus::process_FC15( uint16_t *regs, uint8_t u8size, callback_ptr callba
         bTemp = bitRead(
                     au8Buffer[ u8frameByte ],
                     u8bitsno );
+        bool do_write = true;
         if (callback) {
-            (*callback)(15, u16currentCoil, bTemp);
+            if ((*callback)(15, u16currentCoil, bTemp)) {
+                do_write = false;
+            }
 		}
 
-        bitWrite(
-            regs[ u8currentRegister ],
-            u8currentBit,
-            bTemp );
+        if (do_write) {
+            bitWrite(
+                regs[ u8currentRegister ],
+                u8currentBit,
+                bTemp );
+        }
 
         u8bitsno ++;
 
@@ -1404,7 +1418,15 @@ int8_t Modbus::process_FC16( uint16_t *regs, uint8_t u8size, callback_ptr callba
                    au8Buffer[ (BYTE_CNT + 1) + i * 2 ],
                    au8Buffer[ (BYTE_CNT + 2) + i * 2 ]);
 
-        regs[ u8StartAdd + i ] = temp;
+        bool do_write = true;
+        if (callback) {
+            if ((*callback)(16, u8StartAdd + i, temp)) {
+                do_write = false;
+            }
+		}
+        if (do_write) {
+            regs[ u8StartAdd + i ] = temp;
+        }
     }
     u8CopyBufferSize = u8BufferSize +2;
     sendTxBuffer();
