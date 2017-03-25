@@ -142,7 +142,8 @@ const unsigned char fctsupported[] =
     MB_FC_WRITE_MULTIPLE_REGISTERS
 };
 
-#define T35  5
+// T35 is 3.5 times a character length, so it depends on the baud rate
+#define T35  u16T35
 #define  MAX_BUFFER  64	//!< maximum size for the communication buffer in bytes
 
 typedef int32_t (*callback_ptr)(uint8_t function, uint16_t reg_address, uint16_t new_value);
@@ -170,6 +171,7 @@ private:
     uint16_t u16timeOut;
     uint32_t u32time, u32timeOut;
     uint8_t u8regsize;
+    uint16_t u16T35;
 
     void init(uint8_t u8id, uint8_t u8serno, uint8_t u8txenpin);
 	void init(uint8_t u8id);
@@ -319,6 +321,7 @@ void Modbus::begin(long u32speed)
     }
 
     ((HardwareSerial *)port)->begin(u32speed);
+    u16T35 = 1 + 38500 / u32speed; // 1 (round up) + 1000ms * 11 bits/character * 3.5 character lengths / baudrate
     if (u8txenpin > 1)   // pin 0 & pin 1 are reserved for RX/TX
     {
         // return RS485 transceiver to transmit mode
@@ -402,6 +405,7 @@ void Modbus::begin(long u32speed,uint8_t u8config)
     }
 
     ((HardwareSerial *)port)->begin(u32speed, u8config);
+    u16T35 = 1 + 38500 / u32speed; // 1 (round up) + 1000ms * 11 bits/character * 3.5 character lengths / baudrate
     if (u8txenpin > 1)   // pin 0 & pin 1 are reserved for RX/TX
     {
         // return RS485 transceiver to transmit mode
@@ -819,6 +823,7 @@ void Modbus::init(uint8_t u8id, uint8_t u8serno, uint8_t u8txenpin)
     this->u8serno = (u8serno > 3) ? 0 : u8serno;
     this->u8txenpin = u8txenpin;
     this->u16timeOut = 1000;
+    this->u16T35 = 5;
 }
 
 void Modbus::init(uint8_t u8id)
@@ -827,6 +832,7 @@ void Modbus::init(uint8_t u8id)
     this->u8serno = 4;
     this->u8txenpin = 0;
     this->u16timeOut = 1000;
+    this->u16T35 = 5;
 }
 
 /**
