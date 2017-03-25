@@ -663,6 +663,8 @@ int8_t Modbus::poll()
     // check if there is any incoming frame
 	uint8_t u8current;
     u8current = port->available();
+    // reset error variable
+    u8lastError = 0;
 
     if (millis() - u32timeOut > u16timeOut)
     {
