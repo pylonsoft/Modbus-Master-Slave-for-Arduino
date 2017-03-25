@@ -1133,19 +1133,19 @@ void Modbus::buildException( uint8_t u8exception )
  * This method puts the slave answer into master data buffer
  *
  * @ingroup register
- * TODO: finish its implementation
  */
 void Modbus::get_FC1()
 {
     uint8_t u8byte, i;
-    u8byte = 0;
+    u8byte = 3;
 
-    //  for (i=0; i< au8Buffer[ 2 ] /2; i++) {
-    //    au16regs[ i ] = word(
-    //    au8Buffer[ u8byte ],
-    //    au8Buffer[ u8byte +1 ]);
-    //    u8byte += 2;
-    //  }
+    for (i=0; i< au8Buffer[ 2 ] /2; i++) {
+        au16regs[ i ] = word(
+            au8Buffer[ u8byte +1 ],
+            au8Buffer[ u8byte ]
+        );
+        u8byte += 2;
+    }
 }
 
 /**
