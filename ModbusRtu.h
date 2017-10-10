@@ -1368,7 +1368,7 @@ int8_t Modbus::process_FC15( uint16_t *regs, uint8_t u8size, callback_ptr callba
                     u8bitsno );
         bool do_write = true;
         if (callback) {
-            if ((*callback)(15, u16currentCoil, bTemp)) {
+            if ((*callback)(15, u16coil, bTemp)) {
                 do_write = false;
             }
 		}
