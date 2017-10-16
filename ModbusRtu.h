@@ -146,6 +146,17 @@ const unsigned char fctsupported[] =
 #define T35  u16T35
 #define  MAX_BUFFER  64	//!< maximum size for the communication buffer in bytes
 
+#define NUM_ERROR 6
+enum
+{
+    MB_ERROR_REPLY_TIMEOUT = 0,
+    MB_ERROR_MSG_SIZE = 1,
+    MB_ERROR_BUFF_OVERFLOW = 2,
+    MB_ERROR_WRONG_CRC = 3,
+    MB_ERROR_UNKNOWN_FUNCTION = 4,
+    MB_ERROR_EXCEPTION = 5
+};
+
 typedef int32_t (*callback_ptr)(uint8_t function, uint16_t reg_address, uint16_t new_value);
 
 /**
@@ -168,6 +179,7 @@ private:
     uint8_t u8lastRec;
     uint16_t *au16regs;
     uint16_t u16InCnt, u16OutCnt, u16errCnt;
+    uint16_t u16errors[NUM_ERROR];
     uint16_t u16timeOut;
     uint32_t u32time, u32timeOut;
     uint8_t u8regsize;
@@ -208,6 +220,7 @@ public:
     uint16_t getInCnt(); //!<number of incoming messages
     uint16_t getOutCnt(); //!<number of outcoming messages
     uint16_t getErrCnt(); //!<error counter
+    uint16_t getDetailErrCnt(uint8_t detail);
     uint8_t getID(); //!<get slave ID between 1 and 247
     uint8_t getState();
     uint8_t getLastError(); //!<get last error message
@@ -529,6 +542,22 @@ uint16_t Modbus::getErrCnt()
 }
 
 /**
+ * @brief
+ * Get errors counter value
+ * This can be useful to diagnose communication
+ *
+ * @return errors counter
+ * @ingroup buffer
+ */
+uint16_t Modbus::getDetailErrCnt(uint8_t detail)
+{
+	if (detail >= NUM_ERROR) {
+		return 0;
+	}
+    return u16errors[detail];
+}
+
+/**
  * Get modbus master state
  *
  * @return = 0 IDLE, = 1 WAITING FOR ANSWER
@@ -671,6 +700,7 @@ int8_t Modbus::poll()
         u8state = COM_IDLE;
         u8lastError = NO_REPLY;
         u16errCnt++;
+        u16errors[MB_ERROR_REPLY_TIMEOUT]++;
         return 0;
     }
 
@@ -692,6 +722,7 @@ int8_t Modbus::poll()
     {
         u8state = COM_IDLE;
         u16errCnt++;
+        u16errors[MB_ERROR_MSG_SIZE]++;
         return i8state;
     }
 
@@ -863,6 +894,7 @@ int8_t Modbus::getRxBuffer()
     if (bBuffOverflow)
     {
         u16errCnt++;
+        u16errors[MB_ERROR_BUFF_OVERFLOW]++;
         return ERR_BUFF_OVERFLOW;
     }
     return u8BufferSize;
@@ -1013,6 +1045,7 @@ uint8_t Modbus::validateRequest()
     if ( calcCRC( u8BufferSize-2 ) != u16MsgCRC )
     {
         u16errCnt ++;
+        u16errors[MB_ERROR_WRONG_CRC]++;
         return NO_REPLY;
     }
 
@@ -1029,6 +1062,7 @@ uint8_t Modbus::validateRequest()
     if (!isSupported)
     {
         u16errCnt ++;
+        u16errors[MB_ERROR_UNKNOWN_FUNCTION]++;
         return EXC_FUNC_CODE;
     }
 
@@ -1083,6 +1117,7 @@ uint8_t Modbus::validateAnswer()
     if ( calcCRC( u8BufferSize-2 ) != u16MsgCRC )
     {
         u16errCnt ++;
+        u16errors[MB_ERROR_WRONG_CRC];
         return NO_REPLY;
     }
 
@@ -1090,6 +1125,7 @@ uint8_t Modbus::validateAnswer()
     if ((au8Buffer[ FUNC ] & 0x80) != 0)
     {
         u16errCnt ++;
+        u16errors[MB_ERROR_EXCEPTION]++;
         return ERR_EXCEPTION;
     }
 
@@ -1106,6 +1142,7 @@ uint8_t Modbus::validateAnswer()
     if (!isSupported)
     {
         u16errCnt ++;
+        u16errors[MB_ERROR_UNKNOWN_FUNCTION]++;
         return EXC_FUNC_CODE;
     }
 
