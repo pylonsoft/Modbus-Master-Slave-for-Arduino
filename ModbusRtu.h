@@ -816,7 +816,6 @@ int8_t Modbus::poll( uint16_t *regs, uint8_t u8size, callback_ptr callback=NULL 
         return u8exception;
     }
 
-    u32timeOut = millis();
     u8lastError = 0;
 
     // process message
