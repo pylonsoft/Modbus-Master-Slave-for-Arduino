@@ -41,6 +41,7 @@
 #include "Arduino.h"
 #include "Print.h"
 #include <SoftwareSerial.h>
+#include <NeoHWSerial.h>
 
 /**
  * @struct modbus_t
@@ -174,8 +175,11 @@ private:
     uint8_t u8txenpin; //!< flow control pin: 0=USB or RS-232 mode, >0=RS-485 mode
     uint8_t u8state;
     uint8_t u8lastError;
-    uint8_t au8Buffer[MAX_BUFFER];
-    uint8_t u8BufferSize;
+    volatile uint8_t au8Buffer[MAX_BUFFER];
+    volatile uint8_t u8BufferSize;
+    volatile uint32_t lastByteTime;
+    volatile uint8_t au8SerialBuffer[MAX_BUFFER];
+    volatile uint8_t u8SerialBufferSize;
     uint8_t u8lastRec;
     uint16_t *au16regs;
     uint16_t u16InCnt, u16OutCnt, u16errCnt;
@@ -207,9 +211,8 @@ public:
     Modbus(uint8_t u8id, uint8_t u8serno);
     Modbus(uint8_t u8id, uint8_t u8serno, uint8_t u8txenpin);
     Modbus(uint8_t u8id);
-    void begin(long u32speed);
+    void begin(long u32speed, uint8_t u8config = SERIAL_8N1);
     void begin(SoftwareSerial *sPort, long u32speed);
-    void begin(long u32speed, uint8_t u8config);
     void begin();
     void setTimeOut( uint16_t u16timeout); //!<write communication watch-dog timer
     uint16_t getTimeOut(); //!<get communication watch-dog timer value
@@ -226,7 +229,27 @@ public:
     uint8_t getLastError(); //!<get last error message
     void setID( uint8_t u8id ); //!<write new ID for the slave
     void end(); //!<finish any communication and release serial communication port
+    void rx_byte(uint8_t c); // interrupt context! called when a byte is received
 };
+
+#define SERIAL_COUNT 4
+Modbus * callback_objects[SERIAL_COUNT];
+
+void isr0(uint8_t c) {
+    callback_objects[0]->rx_byte(c);
+}
+
+void isr1(uint8_t c) {
+    callback_objects[1]->rx_byte(c);
+}
+
+void isr2(uint8_t c) {
+    callback_objects[2]->rx_byte(c);
+}
+
+void isr3(uint8_t c) {
+    callback_objects[3]->rx_byte(c);
+}
 
 /* _____PUBLIC FUNCTIONS_____________________________________________________ */
 
@@ -303,38 +326,47 @@ Modbus::Modbus(uint8_t u8id)
  *
  * @see http://arduino.cc/en/Serial/Begin#.Uy4CJ6aKlHY
  * @param speed   baud rate, in standard increments (300..115200)
+ * @param config  data frame settings (data length, parity and stop bits)
  * @ingroup setup
  */
-void Modbus::begin(long u32speed)
+void Modbus::begin(long u32speed,uint8_t u8config)
 {
 
     switch( u8serno )
     {
 #if defined(UBRR1H)
     case 1:
-        port = &Serial1;
+        port = &NeoSerial1;
+        NeoSerial1.attachInterrupt(&isr1);
         break;
 #endif
 
 #if defined(UBRR2H)
     case 2:
-        port = &Serial2;
+        port = &NeoSerial2;
+        NeoSerial2.attachInterrupt(&isr2);
         break;
 #endif
 
 #if defined(UBRR3H)
     case 3:
-        port = &Serial3;
+        port = &NeoSerial3;
+        NeoSerial3.attachInterrupt(&isr3);
         break;
 #endif
     case 0:
     default:
-        port = &Serial;
+        port = &NeoSerial;
+        NeoSerial.attachInterrupt(&isr0);
         break;
     }
 
-    ((HardwareSerial *)port)->begin(u32speed);
-    u16T35 = 1 + 38500 / u32speed; // 1 (round up) + 1000ms * 11 bits/character * 3.5 character lengths / baudrate
+    if (u8serno < SERIAL_COUNT)
+    {
+        callback_objects[u8serno] = this;
+    }
+    ((NeoHWSerial *)port)->begin(u32speed, u8config);
+    u16T35 = 38500000L / u32speed; // 1000000µs * 11 bits/character * 3.5 character lengths / baudrate
     if (u8txenpin > 1)   // pin 0 & pin 1 are reserved for RX/TX
     {
         // return RS485 transceiver to transmit mode
@@ -364,61 +396,9 @@ void Modbus::begin(SoftwareSerial *sPort, long u32speed)
     port=sPort;
 
     sPort->begin(u32speed);
+    u8serno = 255;
 
-    if (u8txenpin > 1)   // pin 0 & pin 1 are reserved for RX/TX
-    {
-        // return RS485 transceiver to transmit mode
-        pinMode(u8txenpin, OUTPUT);
-        digitalWrite(u8txenpin, LOW);
-    }
-
-    while(port->read() >= 0);
-    u8lastRec = u8BufferSize = 0;
-    u16InCnt = u16OutCnt = u16errCnt = 0;
-}
-
-/**
- * @brief
- * Initialize class object.
- *
- * Sets up the serial port using specified baud rate.
- * Call once class has been instantiated, typically within setup().
- *
- * @see http://arduino.cc/en/Serial/Begin#.Uy4CJ6aKlHY
- * @param speed   baud rate, in standard increments (300..115200)
- * @param config  data frame settings (data length, parity and stop bits)
- * @ingroup setup
- */
-void Modbus::begin(long u32speed,uint8_t u8config)
-{
-
-    switch( u8serno )
-    {
-#if defined(UBRR1H)
-    case 1:
-        port = &Serial1;
-        break;
-#endif
-
-#if defined(UBRR2H)
-    case 2:
-        port = &Serial2;
-        break;
-#endif
-
-#if defined(UBRR3H)
-    case 3:
-        port = &Serial3;
-        break;
-#endif
-    case 0:
-    default:
-        port = &Serial;
-        break;
-    }
-
-    ((HardwareSerial *)port)->begin(u32speed, u8config);
-    u16T35 = 1 + 38500 / u32speed; // 1 (round up) + 1000ms * 11 bits/character * 3.5 character lengths / baudrate
+    u16T35 = 38500000L / u32speed; // 1000000µs * 11 bits/character * 3.5 character lengths / baudrate
     if (u8txenpin > 1)   // pin 0 & pin 1 are reserved for RX/TX
     {
         // return RS485 transceiver to transmit mode
@@ -602,6 +582,10 @@ int8_t Modbus::query( modbus_t telegram )
 
     if ((telegram.u8id==0) || (telegram.u8id>247)) return -3;
 
+    if (u8serno < SERIAL_COUNT) {
+        callback_objects[u8serno] = this;
+    }
+
     au16regs = telegram.au16reg;
 
     // telegram header
@@ -673,6 +657,22 @@ int8_t Modbus::query( modbus_t telegram )
     return 0;
 }
 
+void Modbus::rx_byte(uint8_t c)
+{
+    uint32_t m = micros();
+    if (m - lastByteTime >= T35) {
+        // copy serial buffer to ModBus buffer
+        u8BufferSize = u8SerialBufferSize;
+        u8SerialBufferSize = 0;
+        for (uint8_t i = 0; i < u8BufferSize; i++) {
+            au8Buffer[i] = au8SerialBuffer[i];
+		}
+	}
+    lastByteTime = m;
+    if (u8SerialBufferSize >= MAX_BUFFER) return;
+    au8SerialBuffer[u8SerialBufferSize++] = c;
+}
+
 /**
  * @brief *** Only for Modbus Master ***
  * This method checks if there is any incoming answer if pending.
@@ -689,35 +689,64 @@ int8_t Modbus::query( modbus_t telegram )
  */
 int8_t Modbus::poll()
 {
-    // check if there is any incoming frame
-	uint8_t u8current;
-    u8current = port->available();
+    if (u8serno < SERIAL_COUNT)
+    {
+        callback_objects[u8serno] = this;
+    }
     // reset error variable
     u8lastError = 0;
+    // check if there is any incoming frame
+    uint8_t u8current;
 
     if (millis() - u32timeOut > u16timeOut)
     {
+        // waiting to long for slave response
         u8state = COM_IDLE;
         u8lastError = NO_REPLY;
         u16errCnt++;
         u16errors[MB_ERROR_REPLY_TIMEOUT]++;
         return 0;
     }
-
-    if (u8current == 0) return 0;
-
-    // check T35 after frame end or still no frame end
-    if (u8current != u8lastRec)
+    if (u8serno > 254)
     {
-        u8lastRec = u8current;
-        u32time = millis();
-        return 0;
+        u8current = port->available();
+        if (u8current == 0) return 0;
+
+        // check T35 after frame end or still no frame end
+        if (u8current != u8lastRec)
+        {
+            u8lastRec = u8current;
+            u32time = micros();
+            return 0;
+        }
+        if (micros() - u32time < T35) return 0;
+    } else {
+        if (u8BufferSize == 0)
+        {
+            if (u8SerialBufferSize == 0) return 0;
+            uint32_t lbt = lastByteTime;
+            if (micros() - lbt < T35) return 0;
+            // copy serial buffer
+            cli();
+            u8BufferSize = u8SerialBufferSize;
+            u8SerialBufferSize = 0;
+            for (uint8_t i = 0; i < u8BufferSize; i++)
+            {
+                au8Buffer[i] = au8SerialBuffer[i];
+            }
+            sei();
+        }
     }
-    if (millis() - u32time < T35) return 0;
 
     // transfer Serial buffer frame to auBuffer
     u8lastRec = 0;
-    int8_t i8state = getRxBuffer();
+    uint8_t i8state = 0;
+    if (u8serno > 254)
+    {
+        i8state = getRxBuffer();
+    } else {
+        i8state = u8BufferSize;
+    }
     if (i8state < 7)
     {
         u8state = COM_IDLE;
@@ -757,7 +786,9 @@ int8_t Modbus::poll()
         break;
     }
     u8state = COM_IDLE;
-    return u8BufferSize;
+    u8current = u8BufferSize;
+    u8BufferSize = 0;
+    return u8current;
 }
 
 /**
@@ -781,24 +812,58 @@ int8_t Modbus::poll( uint16_t *regs, uint8_t u8size, callback_ptr callback=NULL 
 	uint8_t u8current;
 
 
-    // check if there is any incoming frame
-    u8current = port->available();
-
-    if (u8current == 0) return 0;
-
-    // check T35 after frame end or still no frame end
-    if (u8current != u8lastRec)
+    if (u8serno < SERIAL_COUNT)
     {
-        u8lastRec = u8current;
-        u32time = millis();
-        return 0;
+        callback_objects[u8serno] = this;
     }
-    if (millis() - u32time < T35) return 0;
+    // check if there is any incoming frame
+	if (u8serno > 254)
+	{
+        u8current = port->available();
+        if (u8current == 0) return 0;
+
+        // check T35 after frame end or still no frame end
+        if (u8current != u8lastRec)
+        {
+            u8lastRec = u8current;
+            u32time = micros();
+            return 0;
+        }
+        if (micros() - u32time < T35) return 0;
+    } else {
+        if (u8BufferSize == 0) {
+            if (u8SerialBufferSize == 0) return 0;
+            uint32_t lbt = lastByteTime;
+            if (micros() - lbt < T35) return 0;
+            // copy serial buffer
+            cli();
+            u8BufferSize = u8SerialBufferSize;
+            u8SerialBufferSize = 0;
+            for (uint8_t i = 0; i < u8BufferSize; i++)
+            {
+                au8Buffer[i] = au8SerialBuffer[i];
+            }
+            sei();
+		}
+    }
+
 
     u8lastRec = 0;
-    int8_t i8state = getRxBuffer();
+    uint8_t i8state = 0;
+    if (u8serno > 254)
+    {
+        i8state = getRxBuffer();
+    } else {
+        i8state = u8BufferSize;
+    }
     u8lastError = i8state;
-    if (i8state < 7) return i8state;
+    if (i8state < 7)
+    {
+        u8state = COM_IDLE;
+        u16errCnt++;
+        u16errors[MB_ERROR_MSG_SIZE]++;
+        return i8state;
+    }
 
     // check slave id
     if (au8Buffer[ ID ] != u8id) return 0;
@@ -844,6 +909,7 @@ int8_t Modbus::poll( uint16_t *regs, uint8_t u8size, callback_ptr callback=NULL 
     default:
         break;
     }
+    u8BufferSize = 0;
     return i8state;
 }
 
@@ -855,7 +921,7 @@ void Modbus::init(uint8_t u8id, uint8_t u8serno, uint8_t u8txenpin)
     this->u8serno = (u8serno > 3) ? 0 : u8serno;
     this->u8txenpin = u8txenpin;
     this->u16timeOut = 1000;
-    this->u16T35 = 5;
+    this->u16T35 = 5000;
 }
 
 void Modbus::init(uint8_t u8id)
@@ -864,7 +930,7 @@ void Modbus::init(uint8_t u8id)
     this->u8serno = 4;
     this->u8txenpin = 0;
     this->u16timeOut = 1000;
-    this->u16T35 = 5;
+    this->u16T35 = 5000;
 }
 
 /**
@@ -953,7 +1019,7 @@ void Modbus::sendTxBuffer()
     }
 
     // transfer buffer to serial line
-    port->write( au8Buffer, u8BufferSize );
+    port->write( (uint8_t *)au8Buffer, (uint8_t)u8BufferSize );
 
     // keep RS485 transceiver in transmit mode as long as sending
     if (u8txenpin > 1)
