@@ -356,8 +356,10 @@ void Modbus::begin(long u32speed,uint8_t u8config)
 #endif
     case 0:
     default:
+#if defined(UBRR0H)
         port = &NeoSerial;
         NeoSerial.attachInterrupt(&isr0);
+#endif
         break;
     }
 
@@ -375,7 +377,7 @@ void Modbus::begin(long u32speed,uint8_t u8config)
     }
 
     while(port->read() >= 0);
-    u8lastRec = u8BufferSize = 0;
+    u8lastRec = u8BufferSize = u8SerialBufferSize = 0;
     u16InCnt = u16OutCnt = u16errCnt = 0;
 }
 
@@ -407,7 +409,7 @@ void Modbus::begin(SoftwareSerial *sPort, long u32speed)
     }
 
     while(port->read() >= 0);
-    u8lastRec = u8BufferSize = 0;
+    u8lastRec = u8BufferSize = u8SerialBufferSize = 0;
     u16InCnt = u16OutCnt = u16errCnt = 0;
 }
 
@@ -653,6 +655,7 @@ int8_t Modbus::query( modbus_t telegram )
     }
 
     sendTxBuffer();
+    u8BufferSize = 0;
     u8state = COM_WAITING;
     return 0;
 }
@@ -752,6 +755,7 @@ int8_t Modbus::poll()
         u8state = COM_IDLE;
         u16errCnt++;
         u16errors[MB_ERROR_MSG_SIZE]++;
+        u8BufferSize = 0;
         return i8state;
     }
 
@@ -760,6 +764,7 @@ int8_t Modbus::poll()
     if (u8exception != 0)
     {
         u8state = COM_IDLE;
+        u8BufferSize = 0;
         return u8exception;
     }
 
@@ -862,6 +867,7 @@ int8_t Modbus::poll( uint16_t *regs, uint8_t u8size, callback_ptr callback=NULL 
         u8state = COM_IDLE;
         u16errCnt++;
         u16errors[MB_ERROR_MSG_SIZE]++;
+        u8BufferSize = 0;
         return i8state;
     }
 
@@ -878,6 +884,7 @@ int8_t Modbus::poll( uint16_t *regs, uint8_t u8size, callback_ptr callback=NULL 
             sendTxBuffer();
         }
         u8lastError = u8exception;
+        u8BufferSize = 0;
         return u8exception;
     }
 
@@ -1012,7 +1019,9 @@ void Modbus::sendTxBuffer()
 #endif
         case 0:
         default:
+#if defined(UBRR0H)
             UCSR0A=UCSR0A |(1 << TXC0);
+#endif
             break;
         }
         digitalWrite( u8txenpin, HIGH );
@@ -1045,7 +1054,9 @@ void Modbus::sendTxBuffer()
 #endif
         case 0:
         default:
+#if defined(UBRR0H)
             while (!(UCSR0A & (1 << TXC0)));
+#endif
             break;
         }
 
