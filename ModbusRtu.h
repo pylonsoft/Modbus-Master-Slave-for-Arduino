@@ -1310,16 +1310,19 @@ int8_t Modbus::process_FC1( uint16_t *regs, uint8_t u8size, callback_ptr callbac
 
     for (u16currentCoil = 0; u16currentCoil < u16Coilno; u16currentCoil++)
     {
-        if (callback) {
-            (*callback)(1, u16currentCoil, bitRead( regs[ u8currentRegister ], u8currentBit ) );
-        }
         u16coil = u16StartCoil + u16currentCoil;
         u8currentRegister = (uint8_t) (u16coil / 16);
         u8currentBit = (uint8_t) (u16coil % 16);
+        if (callback) {
+            (*callback)(2, u16coil, bitRead( regs[ u8currentRegister ], u8currentBit ) );
+        }
         bitWrite(
             au8Buffer[ u8BufferSize ],
             u8bitsno,
             bitRead( regs[ u8currentRegister ], u8currentBit ) );
+        if (callback) {
+            (*callback)(1, u16coil, bitRead( regs[ u8currentRegister ], u8currentBit ) );
+        }
 
         u8bitsno ++;
 
