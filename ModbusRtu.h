@@ -186,6 +186,7 @@ private:
     uint16_t u16errors[NUM_ERROR];
     uint16_t u16timeOut;
     uint32_t u32time, u32timeOut;
+    uint32_t u32lastMsg;
     uint8_t u8regsize;
     uint16_t u16T35;
 
@@ -227,6 +228,7 @@ public:
     uint8_t getID(); //!<get slave ID between 1 and 247
     uint8_t getState();
     uint8_t getLastError(); //!<get last error message
+    uint32_t getLastMessageReceivedTime(); //!<get time (millis) when last ModBus message was received
     void setID( uint8_t u8id ); //!<write new ID for the slave
     void end(); //!<finish any communication and release serial communication port
     void rx_byte(uint8_t c); // interrupt context! called when a byte is received
@@ -553,7 +555,7 @@ uint8_t Modbus::getState()
 /**
  * Get the last error in the protocol processor
  *
- * @returnreturn   NO_REPLY = 255      Time-out
+ * @return   NO_REPLY = 255      Time-out
  * @return   EXC_FUNC_CODE = 1   Function code not available
  * @return   EXC_ADDR_RANGE = 2  Address beyond available space for Modbus registers
  * @return   EXC_REGS_QUANT = 3  Coils or registers number beyond the available space
@@ -562,6 +564,17 @@ uint8_t Modbus::getState()
 uint8_t Modbus::getLastError()
 {
     return u8lastError;
+}
+
+/**
+ * Get the time of the last ModBus message received
+ *
+ * @return  time of last message
+ * @ingroup buffer
+ */
+uint32_t Modbus::getLastMessageReceivedTime()
+{
+	return u32lastMsg;
 }
 
 /**
@@ -670,6 +683,7 @@ void Modbus::rx_byte(uint8_t c)
         for (uint8_t i = 0; i < u8BufferSize; i++) {
             au8Buffer[i] = au8SerialBuffer[i];
 		}
+		u32lastMsg = millis();
 	}
     lastByteTime = m;
     if (u8SerialBufferSize >= MAX_BUFFER) return;
